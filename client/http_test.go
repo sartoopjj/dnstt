@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"testing"
@@ -29,7 +29,7 @@ func TestParseRetryAfter(t *testing.T) {
 		{"Fri, 31 Dec 1999 23:59:59 GMT", "1999-12-31T23:59:59Z"},
 		{"xxx", "error"},
 	} {
-		result, err := parseRetryAfter(test.value, now)
+		result, err := ParseRetryAfter(test.value, now)
 		if test.expected == "error" {
 			if err == nil {
 				t.Errorf("%+q returned (%v, %v), expected error",

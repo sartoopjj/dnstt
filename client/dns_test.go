@@ -1,16 +1,18 @@
-package main
+package client
 
 import (
 	"bytes"
 	"io"
 	"testing"
+
+	"www.bamsoftware.com/git/dnstt.git/dns"
 )
 
 func allPackets(buf []byte) ([][]byte, error) {
 	var packets [][]byte
 	r := bytes.NewReader(buf)
 	for {
-		p, err := nextPacket(r)
+		p, err := NextPacket(r)
 		if err != nil {
 			return packets, err
 		}
@@ -47,6 +49,25 @@ func TestNextPacket(t *testing.T) {
 		if !packetsEqual(packets, test.packets) || err != test.err {
 			t.Errorf("%x\nreturned %x %v\nexpected %x %v",
 				test.input, packets, err, test.packets, test.err)
+		}
+	}
+}
+
+func TestDNSNameCapacity(t *testing.T) {
+	for domainLen := 0; domainLen < 255; domainLen++ {
+		domain, err := dns.NewName(Chunks(bytes.Repeat([]byte{'x'}, domainLen), 63))
+		if err != nil {
+			continue
+		}
+		capacity := DnsNameCapacity(domain)
+		if capacity <= 0 {
+			continue
+		}
+		prefix := []byte(Base32Encoding.EncodeToString(bytes.Repeat([]byte{'y'}, capacity)))
+		labels := append(Chunks(prefix, 63), domain...)
+		_, err = dns.NewName(labels)
+		if err != nil {
+			t.Errorf("length %v  capacity %v  %v", domainLen, capacity, err)
 		}
 	}
 }

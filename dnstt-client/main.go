@@ -53,9 +53,9 @@ import (
 	"sync"
 	"time"
 
-	utls "github.com/refraction-networking/utls"
 	"github.com/xtaci/kcp-go/v5"
 	"github.com/xtaci/smux"
+	"www.bamsoftware.com/git/dnstt.git/client"
 	"www.bamsoftware.com/git/dnstt.git/dns"
 	"www.bamsoftware.com/git/dnstt.git/noise"
 	"www.bamsoftware.com/git/dnstt.git/turbotunnel"
@@ -63,26 +63,6 @@ import (
 
 // smux streams will be closed after this much time without receiving data.
 const idleTimeout = 2 * time.Minute
-
-// dnsNameCapacity returns the number of bytes remaining for encoded data after
-// including domain in a DNS name.
-func dnsNameCapacity(domain dns.Name) int {
-	// Names must be 255 octets or shorter in total length.
-	// https://tools.ietf.org/html/rfc1035#section-2.3.4
-	capacity := 255
-	// Subtract the length of the null terminator.
-	capacity -= 1
-	for _, label := range domain {
-		// Subtract the length of the label and the length octet.
-		capacity -= len(label) + 1
-	}
-	// Each label may be up to 63 bytes long and requires 64 bytes to
-	// encode.
-	capacity = capacity * 63 / 64
-	// Base32 expands every 5 bytes to 8.
-	capacity = capacity * 5 / 8
-	return capacity
-}
 
 // readKeyFromFile reads a key from a named file.
 func readKeyFromFile(filename string) ([]byte, error) {
@@ -92,31 +72,6 @@ func readKeyFromFile(filename string) ([]byte, error) {
 	}
 	defer f.Close()
 	return noise.ReadKey(f)
-}
-
-// sampleUTLSDistribution parses a weighted uTLS Client Hello ID distribution
-// string of the form "3*Firefox,2*Chrome,1*iOS", matches each label to a
-// utls.ClientHelloID from utlsClientHelloIDMap, and randomly samples one
-// utls.ClientHelloID from the distribution.
-func sampleUTLSDistribution(spec string) (*utls.ClientHelloID, error) {
-	weights, labels, err := parseWeightedList(spec)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]*utls.ClientHelloID, 0, len(labels))
-	for _, label := range labels {
-		var id *utls.ClientHelloID
-		if label == "none" {
-			id = nil
-		} else {
-			id = utlsLookup(label)
-			if id == nil {
-				return nil, fmt.Errorf("unknown TLS fingerprint %q", label)
-			}
-		}
-		ids = append(ids, id)
-	}
-	return ids[sampleWeighted(weights)], nil
 }
 
 func handle(local *net.TCPConn, sess *smux.Session, conv uint32) error {
@@ -171,7 +126,7 @@ func run(pubkey []byte, domain dns.Name, localAddr *net.TCPAddr, remoteAddr net.
 	}
 	defer ln.Close()
 
-	mtu := dnsNameCapacity(domain) - 8 - 1 - numPadding - 1 // clientid + padding length prefix + padding + data length prefix
+	mtu := client.DnsNameCapacity(domain) - 8 - 1 - client.NumPadding - 1 // clientid + padding length prefix + padding + data length prefix
 	if mtu < 80 {
 		return fmt.Errorf("domain %s leaves only %d bytes for payload", domain, mtu)
 	}
@@ -255,9 +210,9 @@ Examples:
 
 `, os.Args[0])
 		flag.PrintDefaults()
-		labels := make([]string, 0, len(utlsClientHelloIDMap))
+		labels := make([]string, 0, len(client.UTLSClientHelloIDMap))
 		labels = append(labels, "none")
-		for _, entry := range utlsClientHelloIDMap {
+		for _, entry := range client.UTLSClientHelloIDMap {
 			labels = append(labels, entry.Label)
 		}
 		fmt.Fprintf(flag.CommandLine.Output(), `
@@ -328,7 +283,7 @@ Known TLS fingerprints for -utls are:
 		os.Exit(1)
 	}
 
-	utlsClientHelloID, err := sampleUTLSDistribution(utlsDistribution)
+	utlsClientHelloID, err := client.SampleUTLSDistribution(utlsDistribution)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parsing -utls: %v\n", err)
 		os.Exit(1)
@@ -359,9 +314,9 @@ Known TLS fingerprints for -utls are:
 				transport.Proxy = nil
 				rt = transport
 			} else {
-				rt = NewUTLSRoundTripper(nil, utlsClientHelloID)
+				rt = client.NewUTLSRoundTripper(nil, utlsClientHelloID)
 			}
-			pconn, err := NewHTTPPacketConn(rt, dohURL, 32)
+			pconn, err := client.NewHTTPPacketConn(rt, dohURL, 32)
 			return addr, pconn, err
 		}},
 		// -dot
@@ -372,10 +327,10 @@ Known TLS fingerprints for -utls are:
 				dialTLSContext = (&tls.Dialer{}).DialContext
 			} else {
 				dialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-					return utlsDialContext(ctx, network, addr, nil, utlsClientHelloID)
+					return client.UTLSDialContext(ctx, network, addr, nil, utlsClientHelloID)
 				}
 			}
-			pconn, err := NewTLSPacketConn(dotAddr, dialTLSContext)
+			pconn, err := client.NewTLSPacketConn(dotAddr, dialTLSContext)
 			return addr, pconn, err
 		}},
 		// -udp
@@ -407,7 +362,7 @@ Known TLS fingerprints for -utls are:
 		os.Exit(1)
 	}
 
-	pconn = NewDNSPacketConn(pconn, remoteAddr, domain)
+	pconn = client.NewDNSPacketConn(pconn, remoteAddr, domain)
 	err = run(pubkey, domain, localAddr, remoteAddr, pconn)
 	if err != nil {
 		log.Fatal(err)

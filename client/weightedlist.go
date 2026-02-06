@@ -1,4 +1,4 @@
-package main
+package client
 
 // Random selection from weighted distributions, and strings for specifying such
 // distributions.
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// parseWeightedList parses a list of text labels with optional numeric weights,
+// ParseWeightedList parses a list of text labels with optional numeric weights,
 // and returns parallel slices of weights and labels. If a weight is omitted for
 // a label, the weight is 1.
 //
@@ -22,7 +22,7 @@ import (
 //
 //	list ::= entry ("," entry)*
 //	entry ::= (weight "*")? label
-func parseWeightedList(s string) ([]uint32, []string, error) {
+func ParseWeightedList(s string) ([]uint32, []string, error) {
 	const (
 		kindEOF = iota
 		kindComma
@@ -159,14 +159,14 @@ func parseWeightedList(s string) ([]uint32, []string, error) {
 	return weights, labels, nil
 }
 
-// cryptoSource is a math/rand Source that reads from the crypto/rand Reader.
+// CryptoSource is a math/rand Source that reads from the crypto/rand Reader.
 // The Seed method does not affect the sequence of numbers returned from the
 // Int63 method.
-type cryptoSource struct{}
+type CryptoSource struct{}
 
-func (s cryptoSource) Seed(_ int64) {}
+func (s CryptoSource) Seed(_ int64) {}
 
-func (s cryptoSource) Int63() int64 {
+func (s CryptoSource) Int63() int64 {
 	var n int64
 	err := binary.Read(cryptorand.Reader, binary.BigEndian, &n)
 	if err != nil {
@@ -176,10 +176,10 @@ func (s cryptoSource) Int63() int64 {
 	return n
 }
 
-// sampleWeighted returns the index of a randomly selected element of the
+// SampleWeighted returns the index of a randomly selected element of the
 // weights slice, weighted by the values stored in the slice. Panics if
 // the sum of the weights is zero or does not fit in an int64.
-func sampleWeighted(weights []uint32) int {
+func SampleWeighted(weights []uint32) int {
 	var sum int64 = 0
 	for _, w := range weights {
 		sum += int64(w)
@@ -190,7 +190,7 @@ func sampleWeighted(weights []uint32) int {
 	if sum == 0 {
 		panic("total weight is zero")
 	}
-	r := uint64(mathrand.New(&cryptoSource{}).Int63n(sum))
+	r := uint64(mathrand.New(&CryptoSource{}).Int63n(sum))
 	for i, w := range weights {
 		if r < uint64(w) {
 			return i

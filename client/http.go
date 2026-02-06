@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 
 // A default Retry-After delay to use when there is no explicit Retry-After
 // header in an HTTP response.
-const defaultRetryAfter = 10 * time.Second
+const DefaultRetryAfter = 10 * time.Second
 
 // HTTPPacketConn is an HTTP-based transport for DNS messages, used for DNS over
 // HTTPS (DoH). Its WriteTo and ReadFrom methods exchange DNS messages over HTTP
@@ -42,7 +42,7 @@ type HTTPPacketConn struct {
 	// is set when we get a 429 Too Many Requests HTTP response or other
 	// unexpected status code that causes us to need to slow down. It is set
 	// according to the Retry-After header if available, otherwise it is set
-	// to defaultRetryAfter in the future. notBeforeLock controls access to
+	// to DefaultRetryAfter in the future. notBeforeLock controls access to
 	// notBefore.
 	notBefore     time.Time
 	notBeforeLock sync.RWMutex
@@ -110,14 +110,14 @@ func (c *HTTPPacketConn) send(p []byte) error {
 		var retryAfter time.Time
 		if value := resp.Header.Get("Retry-After"); value != "" {
 			var err error
-			retryAfter, err = parseRetryAfter(value, now)
+			retryAfter, err = ParseRetryAfter(value, now)
 			if err != nil {
 				log.Printf("cannot parse Retry-After value %+q", value)
 			}
 		}
 		if retryAfter.IsZero() {
 			// Supply a default.
-			retryAfter = now.Add(defaultRetryAfter)
+			retryAfter = now.Add(DefaultRetryAfter)
 		}
 		if retryAfter.Before(now) {
 			log.Printf("got %+q, but Retry-After is %v in the past",
@@ -160,9 +160,9 @@ func (c *HTTPPacketConn) sendLoop() {
 	}
 }
 
-// parseRetryAfter parses the value of a Retry-After header as an absolute
+// ParseRetryAfter parses the value of a Retry-After header as an absolute
 // time.Time.
-func parseRetryAfter(value string, now time.Time) (time.Time, error) {
+func ParseRetryAfter(value string, now time.Time) (time.Time, error) {
 	// May be a date string or an integer number of seconds.
 	// https://tools.ietf.org/html/rfc7231#section-7.1.3
 	if t, err := http.ParseTime(value); err == nil {

@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bytes"
@@ -17,30 +17,30 @@ import (
 
 const (
 	// How many bytes of random padding to insert into queries.
-	numPadding = 3
+	NumPadding = 3
 	// In an otherwise empty polling query, insert even more random padding,
 	// to reduce the chance of a cache hit. Cannot be greater than 31,
 	// because the prefix codes indicating padding start at 224.
-	numPaddingForPoll = 8
+	NumPaddingForPoll = 8
 
 	// sendLoop has a poll timer that automatically sends an empty polling
 	// query when a certain amount of time has elapsed without a send. The
-	// poll timer is initially set to initPollDelay. It increases by a
-	// factor of pollDelayMultiplier every time the poll timer expires, up
-	// to a maximum of maxPollDelay. The poll timer is reset to
-	// initPollDelay whenever an a send occurs that is not the result of the
+	// poll timer is initially set to InitPollDelay. It increases by a
+	// factor of PollDelayMultiplier every time the poll timer expires, up
+	// to a maximum of MaxPollDelay. The poll timer is reset to
+	// InitPollDelay whenever an a send occurs that is not the result of the
 	// poll timer expiring.
-	initPollDelay       = 500 * time.Millisecond
-	maxPollDelay        = 10 * time.Second
-	pollDelayMultiplier = 2.0
+	InitPollDelay       = 500 * time.Millisecond
+	MaxPollDelay        = 10 * time.Second
+	PollDelayMultiplier = 2.0
 
 	// A limit on the number of empty poll requests we may send in a burst
 	// as a result of receiving data.
-	pollLimit = 16
+	PollLimit = 16
 )
 
-// base32Encoding is a base32 encoding without padding.
-var base32Encoding = base32.StdEncoding.WithPadding(base32.NoPadding)
+// Base32Encoding is a base32 encoding without padding.
+var Base32Encoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 // DNSPacketConn provides a packet-sending and -receiving interface over various
 // forms of DNS. It handles the details of how packets and padding are encoded
@@ -78,7 +78,7 @@ func NewDNSPacketConn(transport net.PacketConn, addr net.Addr, domain dns.Name) 
 	c := &DNSPacketConn{
 		clientID:        clientID,
 		domain:          domain,
-		pollChan:        make(chan struct{}, pollLimit),
+		pollChan:        make(chan struct{}, PollLimit),
 		QueuePacketConn: turbotunnel.NewQueuePacketConn(clientID, 0),
 	}
 	go func() {
@@ -96,10 +96,10 @@ func NewDNSPacketConn(transport net.PacketConn, addr net.Addr, domain dns.Name) 
 	return c
 }
 
-// dnsResponsePayload extracts the downstream payload of a DNS response, encoded
+// DNSResponsePayload extracts the downstream payload of a DNS response, encoded
 // into the RDATA of a TXT RR. It returns nil if the message doesn't pass format
 // checks, or if the name in its Question entry is not a subdomain of domain.
-func dnsResponsePayload(resp *dns.Message, domain dns.Name) []byte {
+func DNSResponsePayload(resp *dns.Message, domain dns.Name) []byte {
 	if resp.Flags&0x8000 != 0x8000 {
 		// QR != 1, this is not a response.
 		return nil
@@ -131,11 +131,11 @@ func dnsResponsePayload(resp *dns.Message, domain dns.Name) []byte {
 	return payload
 }
 
-// nextPacket reads the next length-prefixed packet from r. It returns a nil
+// NextPacket reads the next length-prefixed packet from r. It returns a nil
 // error only when a complete packet was read. It returns io.EOF only when there
 // were 0 bytes remaining to read from r. It returns io.ErrUnexpectedEOF when
 // EOF occurs in the middle of an encoded packet.
-func nextPacket(r *bytes.Reader) ([]byte, error) {
+func NextPacket(r *bytes.Reader) ([]byte, error) {
 	for {
 		var n uint16
 		err := binary.Read(r, binary.BigEndian, &n)
@@ -201,13 +201,13 @@ func (c *DNSPacketConn) recvLoop(transport net.PacketConn) error {
 			continue
 		}
 
-		payload := dnsResponsePayload(&resp, c.domain)
+		payload := DNSResponsePayload(&resp, c.domain)
 
 		// Pull out the packets contained in the payload.
 		r := bytes.NewReader(payload)
 		any := false
 		for {
-			p, err := nextPacket(r)
+			p, err := NextPacket(r)
 			if err != nil {
 				break
 			}
@@ -228,9 +228,9 @@ func (c *DNSPacketConn) recvLoop(transport net.PacketConn) error {
 	}
 }
 
-// chunks breaks p into non-empty subslices of at most n bytes, greedily so that
+// Chunks breaks p into non-empty subslices of at most n bytes, greedily so that
 // only final subslice has length < n.
-func chunks(p []byte, n int) [][]byte {
+func Chunks(p []byte, n int) [][]byte {
 	var result [][]byte
 	for len(p) > 0 {
 		sz := len(p)
@@ -256,29 +256,29 @@ func chunks(p []byte, n int) [][]byte {
 //
 //  0. Start with the raw packet contents.
 //
-//	supercalifragilisticexpialidocious
+//     supercalifragilisticexpialidocious
 //
 //  1. Length-prefix the packet and add random padding. A length prefix L < 0xe0
 //     means a data packet of L bytes. A length prefix L ≥ 0xe0 means padding
 //     of L − 0xe0 bytes (not counting the length of the length prefix itself).
 //
-//	\xe3\xd9\xa3\x15\x22supercalifragilisticexpialidocious
+//     \xe3\xd9\xa3\x15\x22supercalifragilisticexpialidocious
 //
 //  2. Prefix the ClientID.
 //
-//	CLIENTID\xe3\xd9\xa3\x15\x22supercalifragilisticexpialidocious
+//     CLIENTID\xe3\xd9\xa3\x15\x22supercalifragilisticexpialidocious
 //
 //  3. Base32-encode, without padding and in lower case.
 //
-//	ingesrkokreujy6zumkse43vobsxey3bnruwm4tbm5uwy2ltoruwgzlyobuwc3djmrxwg2lpovzq
+//     ingesrkokreujy6zumkse43vobsxey3bnruwm4tbm5uwy2ltoruwgzlyobuwc3djmrxwg2lpovzq
 //
 //  4. Break into labels of at most 63 octets.
 //
-//	ingesrkokreujy6zumkse43vobsxey3bnruwm4tbm5uwy2ltoruwgzlyobuwc3d.jmrxwg2lpovzq
+//     ingesrkokreujy6zumkse43vobsxey3bnruwm4tbm5uwy2ltoruwgzlyobuwc3d.jmrxwg2lpovzq
 //
 //  5. Append the domain.
 //
-//	ingesrkokreujy6zumkse43vobsxey3bnruwm4tbm5uwy2ltoruwgzlyobuwc3d.jmrxwg2lpovzq.t.example.com
+//     ingesrkokreujy6zumkse43vobsxey3bnruwm4tbm5uwy2ltoruwgzlyobuwc3d.jmrxwg2lpovzq.t.example.com
 func (c *DNSPacketConn) send(transport net.PacketConn, p []byte, addr net.Addr) error {
 	var decoded []byte
 	{
@@ -288,9 +288,9 @@ func (c *DNSPacketConn) send(transport net.PacketConn, p []byte, addr net.Addr) 
 		var buf bytes.Buffer
 		// ClientID
 		buf.Write(c.clientID[:])
-		n := numPadding
+		n := NumPadding
 		if len(p) == 0 {
-			n = numPaddingForPoll
+			n = NumPaddingForPoll
 		}
 		// Padding / cache inhibition
 		buf.WriteByte(byte(224 + n))
@@ -303,10 +303,10 @@ func (c *DNSPacketConn) send(transport net.PacketConn, p []byte, addr net.Addr) 
 		decoded = buf.Bytes()
 	}
 
-	encoded := make([]byte, base32Encoding.EncodedLen(len(decoded)))
-	base32Encoding.Encode(encoded, decoded)
+	encoded := make([]byte, Base32Encoding.EncodedLen(len(decoded)))
+	Base32Encoding.Encode(encoded, decoded)
 	encoded = bytes.ToLower(encoded)
-	labels := chunks(encoded, 63)
+	labels := Chunks(encoded, 63)
 	labels = append(labels, c.domain...)
 	name, err := dns.NewName(labels)
 	if err != nil {
@@ -349,7 +349,7 @@ func (c *DNSPacketConn) send(transport net.PacketConn, p []byte, addr net.Addr) 
 // on the network using send. It also does polling with empty packets when
 // requested by pollChan or after a timeout.
 func (c *DNSPacketConn) sendLoop(transport net.PacketConn, addr net.Addr) error {
-	pollDelay := initPollDelay
+	pollDelay := InitPollDelay
 	pollTimer := time.NewTimer(pollDelay)
 	for {
 		var p []byte
@@ -380,9 +380,9 @@ func (c *DNSPacketConn) sendLoop(transport net.PacketConn, addr net.Addr) error 
 		if pollTimerExpired {
 			// We're polling because it's been a while since we last
 			// polled. Increase the poll delay.
-			pollDelay = time.Duration(float64(pollDelay) * pollDelayMultiplier)
-			if pollDelay > maxPollDelay {
-				pollDelay = maxPollDelay
+			pollDelay = time.Duration(float64(pollDelay) * PollDelayMultiplier)
+			if pollDelay > MaxPollDelay {
+				pollDelay = MaxPollDelay
 			}
 		} else {
 			// We're sending an actual data packet, or we're polling
@@ -391,7 +391,7 @@ func (c *DNSPacketConn) sendLoop(transport net.PacketConn, addr net.Addr) error 
 			if !pollTimer.Stop() {
 				<-pollTimer.C
 			}
-			pollDelay = initPollDelay
+			pollDelay = InitPollDelay
 		}
 		pollTimer.Reset(pollDelay)
 
@@ -404,4 +404,24 @@ func (c *DNSPacketConn) sendLoop(transport net.PacketConn, addr net.Addr) error 
 			continue
 		}
 	}
+}
+
+// DnsNameCapacity returns the number of bytes remaining for encoded data after
+// including domain in a DNS name.
+func DnsNameCapacity(domain dns.Name) int {
+	// Names must be 255 octets or shorter in total length.
+	// https://tools.ietf.org/html/rfc1035#section-2.3.4
+	capacity := 255
+	// Subtract the length of the null terminator.
+	capacity -= 1
+	for _, label := range domain {
+		// Subtract the length of the label and the length octet.
+		capacity -= len(label) + 1
+	}
+	// Each label may be up to 63 bytes long and requires 64 bytes to
+	// encode.
+	capacity = capacity * 63 / 64
+	// Base32 expands every 5 bytes to 8.
+	capacity = capacity * 5 / 8
+	return capacity
 }

@@ -1,3 +1,15 @@
+## v1.20260206.0
+
+Extracted an importable client/ library package from dnstt-client/. The
+transport types (DNSPacketConn, HTTPPacketConn, TLSPacketConn), the uTLS
+helpers (UTLSRoundTripper, UTLSDialContext, SampleUTLSDistribution), and
+supporting utilities (ParseWeightedList, SampleWeighted, DnsNameCapacity)
+now live in package "client" with exported names, so they can be imported
+by external Go projects such as Xray-core. The dns/, noise/, and
+turbotunnel/ packages are unchanged. The dnstt-client binary is
+functionally identical; it now imports from the client/ package instead
+of having its own copies. No protocol or behavioral changes.
+
 ## v1.20240513.0
 
 Updated utls to v1.6.6. Added a "random" fingerprint ID that maps to

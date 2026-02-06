@@ -1,4 +1,4 @@
-package main
+package client
 
 // Support code for TLS camouflage using uTLS.
 
@@ -16,9 +16,9 @@ import (
 	"golang.org/x/net/http2"
 )
 
-// utlsClientHelloIDMap is a correspondence between human-readable labels and
+// UTLSClientHelloIDMap is a correspondence between human-readable labels and
 // supported utls.ClientHelloIDs.
-var utlsClientHelloIDMap = []struct {
+var UTLSClientHelloIDMap = []struct {
 	Label string
 	ID    *utls.ClientHelloID
 }{
@@ -50,10 +50,10 @@ var utlsClientHelloIDMap = []struct {
 	{"iOS_14", &utls.HelloIOS_14},
 }
 
-// utlsLookup returns a *utls.ClientHelloID from utlsClientHelloIDMap by a
+// UTLSLookup returns a *utls.ClientHelloID from UTLSClientHelloIDMap by a
 // case-insensitive label match, or nil if there is no match.
-func utlsLookup(label string) *utls.ClientHelloID {
-	for _, entry := range utlsClientHelloIDMap {
+func UTLSLookup(label string) *utls.ClientHelloID {
+	for _, entry := range UTLSClientHelloIDMap {
 		if strings.ToLower(label) == strings.ToLower(entry.Label) {
 			return entry.ID
 		}
@@ -61,10 +61,10 @@ func utlsLookup(label string) *utls.ClientHelloID {
 	return nil
 }
 
-// utlsDialContext connects to the given network address and initiates a TLS
+// UTLSDialContext connects to the given network address and initiates a TLS
 // handshake with the provided ClientHelloID, and returns the resulting TLS
 // connection.
-func utlsDialContext(ctx context.Context, network, addr string, config *utls.Config, id *utls.ClientHelloID) (*utls.UConn, error) {
+func UTLSDialContext(ctx context.Context, network, addr string, config *utls.Config, id *utls.ClientHelloID) (*utls.UConn, error) {
 	// Set the SNI from addr, if not already set.
 	if config == nil {
 		config = &utls.Config{}
@@ -97,7 +97,7 @@ func utlsDialContext(ctx context.Context, network, addr string, config *utls.Con
 	return uconn, nil
 }
 
-// The goal of utlsRoundTripper is: provide an http.RoundTripper abstraction
+// The goal of UTLSRoundTripper is: provide an http.RoundTripper abstraction
 // that retains the features of http.Transport (e.g., persistent connections and
 // HTTP/2 support), while making TLS connections using uTLS in place of
 // crypto/tls. The challenge is: while http.Transport provides a DialTLSContext
@@ -111,7 +111,7 @@ func utlsDialContext(ctx context.Context, network, addr string, config *utls.Con
 // The code here uses an idea adapted from meek_lite in obfs4proxy:
 // https://gitlab.com/yawning/obfs4/commit/4d453dab2120082b00bf6e63ab4aaeeda6b8d8a3
 // Instead of setting DialTLSContext on an http.Transport and exposing it
-// directly, we expose a wrapper type, utlsRoundTripper, which contains within
+// directly, we expose a wrapper type, UTLSRoundTripper, which contains within
 // it either an http.Transport or an http2.Transport. The first time a caller
 // calls RoundTrip on the wrapper, we initiate a uTLS connection
 // (bootstrapConn), then peek at the ALPN-negotiated protocol: if "h2", create
@@ -131,28 +131,28 @@ func utlsDialContext(ctx context.Context, network, addr string, config *utls.Con
 // https://bugs.torproject.org/tpo/anti-censorship/pluggable-transports/meek/29077
 // https://github.com/refraction-networking/utls/issues/16
 
-// utlsRoundTripper is an http.RoundTripper that uses uTLS (with a specified
+// UTLSRoundTripper is an http.RoundTripper that uses uTLS (with a specified
 // ClientHelloID) to make TLS connections.
 //
 // Can only be reused among servers which negotiate the same ALPN.
-type utlsRoundTripper struct {
+type UTLSRoundTripper struct {
 	clientHelloID *utls.ClientHelloID
 	config        *utls.Config
 	innerLock     sync.Mutex
 	inner         http.RoundTripper
 }
 
-// NewUTLSRoundTripper creates a utlsRoundTripper with the given TLS
+// NewUTLSRoundTripper creates a UTLSRoundTripper with the given TLS
 // configuration and ClientHelloID.
-func NewUTLSRoundTripper(config *utls.Config, id *utls.ClientHelloID) *utlsRoundTripper {
-	return &utlsRoundTripper{
+func NewUTLSRoundTripper(config *utls.Config, id *utls.ClientHelloID) *UTLSRoundTripper {
+	return &UTLSRoundTripper{
 		clientHelloID: id,
 		config:        config,
 		// inner will be set in the first call to RoundTrip.
 	}
 }
 
-func (rt *utlsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+func (rt *UTLSRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch req.URL.Scheme {
 	case "http":
 		// If http, don't invoke uTLS; just pass it to an ordinary http.Transport.
@@ -167,7 +167,7 @@ func (rt *utlsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	if rt.inner == nil {
 		// On the first call, make an http.Transport or http2.Transport
 		// as appropriate.
-		rt.inner, err = makeRoundTripper(req, rt.config, rt.clientHelloID)
+		rt.inner, err = MakeRoundTripper(req, rt.config, rt.clientHelloID)
 	}
 	rt.innerLock.Unlock()
 	if err != nil {
@@ -178,18 +178,18 @@ func (rt *utlsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	return rt.inner.RoundTrip(req)
 }
 
-// makeRoundTripper makes a bootstrap TLS configuration using the given TLS
+// MakeRoundTripper makes a bootstrap TLS configuration using the given TLS
 // configuration and ClientHelloID, and creates an http.Transport or
 // http2.Transport, depending on the negotated ALPN. The Transport is set up to
 // make future TLS connections using the same TLS configuration and
 // ClientHelloID.
-func makeRoundTripper(req *http.Request, config *utls.Config, id *utls.ClientHelloID) (http.RoundTripper, error) {
-	addr, err := addrForDial(req.URL)
+func MakeRoundTripper(req *http.Request, config *utls.Config, id *utls.ClientHelloID) (http.RoundTripper, error) {
+	addr, err := AddrForDial(req.URL)
 	if err != nil {
 		return nil, err
 	}
 
-	bootstrapConn, err := utlsDialContext(req.Context(), "tcp", addr, config, id)
+	bootstrapConn, err := UTLSDialContext(req.Context(), "tcp", addr, config, id)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func makeRoundTripper(req *http.Request, config *utls.Config, id *utls.ClientHel
 		}
 
 		// Later dials make a new connection.
-		uconn, err := utlsDialContext(ctx, "tcp", addr, config, id)
+		uconn, err := UTLSDialContext(ctx, "tcp", addr, config, id)
 		if err != nil {
 			return nil, err
 		}
@@ -249,8 +249,8 @@ func makeRoundTripper(req *http.Request, config *utls.Config, id *utls.ClientHel
 	}
 }
 
-// addrForDial extracts a host:port address from a URL, suitable for dialing.
-func addrForDial(url *url.URL) (string, error) {
+// AddrForDial extracts a host:port address from a URL, suitable for dialing.
+func AddrForDial(url *url.URL) (string, error) {
 	host := url.Hostname()
 	// net/http would use golang.org/x/net/idna here, to convert a possible
 	// internationalized domain name to ASCII.
@@ -267,4 +267,29 @@ func addrForDial(url *url.URL) (string, error) {
 		}
 	}
 	return net.JoinHostPort(host, port), nil
+}
+
+// SampleUTLSDistribution parses a weighted uTLS Client Hello ID distribution
+// string of the form "3*Firefox,2*Chrome,1*iOS", matches each label to a
+// utls.ClientHelloID from UTLSClientHelloIDMap, and randomly samples one
+// utls.ClientHelloID from the distribution.
+func SampleUTLSDistribution(spec string) (*utls.ClientHelloID, error) {
+	weights, labels, err := ParseWeightedList(spec)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]*utls.ClientHelloID, 0, len(labels))
+	for _, label := range labels {
+		var id *utls.ClientHelloID
+		if label == "none" {
+			id = nil
+		} else {
+			id = UTLSLookup(label)
+			if id == nil {
+				return nil, fmt.Errorf("unknown TLS fingerprint %q", label)
+			}
+		}
+		ids = append(ids, id)
+	}
+	return ids[SampleWeighted(weights)], nil
 }

@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bufio"
@@ -13,7 +13,7 @@ import (
 	"www.bamsoftware.com/git/dnstt.git/turbotunnel"
 )
 
-const dialTimeout = 30 * time.Second
+const DialTimeout = 30 * time.Second
 
 // TLSPacketConn is a TLS- and TCP-based transport for DNS messages, used for
 // DNS over TLS (DoT). Its WriteTo and ReadFrom methods exchange DNS messages
@@ -38,7 +38,7 @@ type TLSPacketConn struct {
 // reconnection attempt fails.
 func NewTLSPacketConn(addr string, dialTLSContext func(ctx context.Context, network, addr string) (net.Conn, error)) (*TLSPacketConn, error) {
 	dial := func() (net.Conn, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), DialTimeout)
 		defer cancel()
 		return dialTLSContext(ctx, "tcp", addr)
 	}
